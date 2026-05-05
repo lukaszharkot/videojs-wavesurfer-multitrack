@@ -24,6 +24,8 @@ export interface WaveformTrack {
     type: string;
     url: string;
     contentType?: string;
+    /** Optional label rendered in the top-left corner of the channel strip (e.g. "Track 1 L"). */
+    label?: string;
     details?: {
         track?: number;
         channel?: number;
@@ -54,6 +56,8 @@ export interface Options {
     barGap?: number;
     barRadius?: number;
     normalize?: boolean;
+    /** Color of the label text. Defaults to cursorColor when not set. */
+    labelColor?: string;
     debug?: boolean;
     displayMilliseconds?: boolean;
     xhr?: XhrOptions;
@@ -73,3 +77,17 @@ export interface WavesurferMultitrackPlugin {
  * so `videojs.Player` is already sufficient.
  */
 export type VideojsWavesurferMultitrack = videojs.Player;
+
+/**
+ * Parse an audiowaveform JSON object into wavesurfer.js peaks format.
+ * Useful for pre-processing or caching peaks before passing to loadTracks().
+ *
+ * @param json - Parsed audiowaveform JSON (version 2 format).
+ * @returns Peaks per channel as number[][].
+ */
+export declare function parsePeaksJson(json: {
+    data: number[];
+    channels?: number;
+    bits?: number;
+    [key: string]: unknown;
+}): number[][];

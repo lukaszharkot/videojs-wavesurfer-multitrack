@@ -104,6 +104,20 @@ class WavesurferMultitrack extends Plugin {
         // Create the multitrack wrapper div inside the player
         this._createWrapper();
 
+        // Redraw wavesurfers when the player is resized (handles browser zoom too).
+        // Debounced to avoid thrashing during continuous resize.
+        this._resizeObserver = null;
+        if (typeof ResizeObserver !== 'undefined') {
+            let resizeTimer = null;
+            this._resizeObserver = new ResizeObserver(() => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    this._onResize();
+                }, 100);
+            });
+            this._resizeObserver.observe(this.player.el_);
+        }
+
         // Listen for VideoJS events to keep time display in sync
         this.player.on(Event.TIMEUPDATE, this._onTimeUpdate.bind(this));
         this.player.on(Event.VOLUMECHANGE, this._onVolumeChange.bind(this));
@@ -296,6 +310,12 @@ class WavesurferMultitrack extends Plugin {
                     return channelDiv.querySelector('.' + CHANNEL_CLASS + '__wave');
                 });
 
+                // Remove divider from the last channel strip
+                const lastChannel = this._wrapper.querySelector('.' + CHANNEL_CLASS + ':last-child');
+                if (lastChannel) {
+                    lastChannel.style.borderBottom = 'none';
+                }
+
                 // Step 2: measure the player width.
                 // We MUST have a non-zero width before creating WaveSurfer instances —
                 // drawBuffer() reads container.clientWidth synchronously and the value
@@ -412,19 +432,37 @@ class WavesurferMultitrack extends Plugin {
         outer.style.width = '100%';
         outer.style.height = this.opts.channelHeight + 'px';
         outer.style.boxSizing = 'border-box';
+        outer.style.borderBottom = '1px solid ' + (this.opts.dividerColor || 'rgba(255,255,255,0.15)');
         outer.setAttribute('data-track', track);
         outer.setAttribute('data-channel', channel);
 
-        // WaveSurfer container — explicit pixel height, block display.
-        // Width is inherited (100% of outer which is 100% of wrapper = full player width).
         const waveDiv = document.createElement('div');
         waveDiv.className = CHANNEL_CLASS + '__wave';
         waveDiv.style.display = 'block';
         waveDiv.style.width = '100%';
         waveDiv.style.height = this.opts.channelHeight + 'px';
         waveDiv.style.boxSizing = 'border-box';
+        waveDiv.dataset.waveHeight = this.opts.channelHeight;
 
         outer.appendChild(waveDiv);
+
+        if (item.label) {
+            const label = document.createElement('span');
+            label.className = CHANNEL_CLASS + '__label';
+            label.textContent = item.label;
+            label.style.position = 'absolute';
+            label.style.top = '6px';
+            label.style.left = '8px';
+            label.style.zIndex = '10';
+            label.style.fontSize = '11px';
+            label.style.fontWeight = '600';
+            label.style.letterSpacing = '0.03em';
+            label.style.pointerEvents = 'none';
+            label.style.userSelect = 'none';
+            label.style.color = this.opts.labelColor || this.opts.cursorColor || '#fff';
+            outer.appendChild(label);
+        }
+
         return outer;
     }
 
@@ -437,10 +475,12 @@ class WavesurferMultitrack extends Plugin {
      * @private
      */
     _buildWaveSurferOptions(container, containerWidth) {
+        // Use the effective wave height stored in the data attribute
+        const height = parseInt(container.dataset.waveHeight) || this.opts.channelHeight;
         const opts = {
             container,
             backend: 'MediaElement',
-            height: this.opts.channelHeight,
+            height,
             waveColor: this.opts.waveColor,
             progressColor: this.opts.progressColor,
             cursorColor: this.opts.cursorColor,
@@ -526,9 +566,6 @@ class WavesurferMultitrack extends Plugin {
     /** @private */
     _onTimeUpdate() {
         this._updateTimeDisplay();
-        // Robust cursor sync: directly update drawer progress on every timeupdate.
-        // This is a fallback for cases where wavesurfer's own audioprocess rAF loop
-        // doesn't fire (e.g. if the backend timer didn't start correctly).
         const duration = this.player.duration();
         if (duration > 0) {
             const progress = Math.min(1, Math.max(0, this.player.currentTime() / duration));
@@ -549,13 +586,62 @@ class WavesurferMultitrack extends Plugin {
 
     /** @private */
     _onScreenChange() {
-        // Redraw all wavesurfers on fullscreen change
+        const duration = this.player.duration();
+        const progress = duration > 0
+            ? Math.min(1, Math.max(0, this.player.currentTime() / duration))
+            : 0;
+
         this._wavesurfers.forEach((ws) => {
             try {
                 ws.drawBuffer && ws.drawBuffer();
             } catch (e) {
                 // ignore
             }
+
+            window.requestAnimationFrame(() => {
+                try {
+                    if (ws.drawer) {
+                        ws.drawer.progress(progress);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            });
+        });
+    }
+
+    /** @private */
+    _onResize() {
+        const playerRect = this.player.el_.getBoundingClientRect();
+        const newWidth = playerRect.width || this.player.el_.offsetWidth || 0;
+        if (newWidth === 0) return;
+
+        // Snapshot the current progress before drawBuffer() — capture here
+        // so the rAF closure has the correct value even if player state changes.
+        const duration = this.player.duration();
+        const progress = duration > 0
+            ? Math.min(1, Math.max(0, this.player.currentTime() / duration))
+            : 0;
+
+        this._wavesurfers.forEach((ws) => {
+            try {
+                ws.drawBuffer && ws.drawBuffer();
+            } catch (e) {
+                // ignore
+            }
+
+            // Restore progress in the next animation frame — drawBuffer() resets the
+            // progress overlay canvas synchronously at the end, so we must apply it
+            // after that paint cycle completes.
+            window.requestAnimationFrame(() => {
+                try {
+                    if (ws.drawer) {
+                        ws.drawer.progress(progress);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            });
         });
     }
 
@@ -641,6 +727,10 @@ class WavesurferMultitrack extends Plugin {
      */
     dispose() {
         this._log('dispose()');
+        if (this._resizeObserver) {
+            this._resizeObserver.disconnect();
+            this._resizeObserver = null;
+        }
         this._removeWrapper();
         super.dispose();
     }

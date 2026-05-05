@@ -37,6 +37,11 @@
     position: relative;
     width: 100%;
     box-sizing: border-box;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+
+    &:last-child {
+        border-bottom: none;
+    }
 
     // Inner wave container
     &__wave {
@@ -52,5 +57,14 @@
         canvas {
             display: block;
         }
+    }
+
+    // Label strip rendered above the waveform (not overlaid on it)
+    &__label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        pointer-events: none;
+        user-select: none;
     }
 }

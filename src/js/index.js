@@ -6,3 +6,4 @@ import './videojs.wavesurfer.multitrack.js';
 import '../css/videojs.wavesurfer.multitrack.scss';
 
 export { WavesurferMultitrack } from './videojs.wavesurfer.multitrack.js';
+export { parsePeaksJson } from './utils/fetch-peaks';

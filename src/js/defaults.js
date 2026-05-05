@@ -20,6 +20,10 @@ const pluginDefaultOptions = {
     barGap: undefined,
     barRadius: undefined,
     normalize: false,
+    // Color of the label text. Defaults to cursorColor when not set.
+    labelColor: undefined,
+    // Color of the divider line between channels. Accepts any CSS color string.
+    dividerColor: 'rgba(255,255,255,0.15)',
     // Fetch options used when loading waveform JSON files.
     // Supports: { credentials: 'include' | 'same-origin' | 'omit' }
     xhr: {},
