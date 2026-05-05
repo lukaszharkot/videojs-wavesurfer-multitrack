@@ -37,7 +37,7 @@
   },
   "peerDependencies": {
     "video.js": ">=7.0.0",
-    "wavesurfer.js": ">=7.0.0"
+    "wavesurfer.js": ">=6.3.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
@@ -51,7 +51,7 @@
     "sass-loader": "^16.0.4",
     "terser-webpack-plugin": "^5.5.0",
     "video.js": "^8.0.0",
-    "wavesurfer.js": "^7.6.3",
+    "wavesurfer.js": "^6.6.4",
     "webpack": "^5.97.1",
     "webpack-cli": "^5.1.4",
     "webpack-dev-server": "^5.2.0",

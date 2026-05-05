@@ -24,12 +24,11 @@
     }
 }
 
-// The scrollable/expandable container that holds all channel strips
+// The scrollable/expandable container that holds all channel strips.
+// position/width/height/z-index are set via inline JS (like videojs-wavesurfer does).
 .vjs-multitrack-wrapper {
-    position: relative;
-    width: 100%;
-    background: transparent;
     box-sizing: border-box;
+    background: transparent;
     // height and overflow set dynamically by JS
 }
 

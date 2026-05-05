@@ -26,6 +26,8 @@ npm install @lukaszharkot/videojs-wavesurfer-multitrack
 npm install video.js wavesurfer.js
 ```
 
+Compatible with **wavesurfer.js v6.x** (same version used by `videojs-wavesurfer`). Uses `backend: 'MediaElement'` so the cursor syncs automatically to the VideoJS media element — no conflicts with `videojs-wavesurfer` running alongside.
+
 ## Usage
 
 ```js

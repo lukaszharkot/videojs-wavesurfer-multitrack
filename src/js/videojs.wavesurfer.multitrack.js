@@ -54,14 +54,15 @@ class WavesurferMultitrack extends Plugin {
         this._wrapper = null;
         /** @type {boolean} */
         this._waveReady = false;
-        /** @type {Function|null} */
-        this._resizeObserver = null;
+        /** @type {number} */
+        this._readyCount = 0;
 
         // Add plugin CSS class to player
         player.addClass(PLUGIN_CLASS);
 
-        // Wait for player UI to be ready before initializing
-        this.player.one(Event.READY, this._initialize.bind(this));
+        // Wait for player UI to be ready before initializing.
+        // player.ready() fires immediately if the player is already ready (unlike player.one).
+        this.player.ready(this._initialize.bind(this));
     }
 
     /**
@@ -116,7 +117,9 @@ class WavesurferMultitrack extends Plugin {
     }
 
     /**
-     * Create the scrollable/expandable wrapper div inside the VideoJS player element.
+     * Create the wrapper div inside the VideoJS player element.
+     * Positioned absolutely (like other vjs UI elements) so it has a real
+     * clientWidth equal to the player width — the same technique videojs-wavesurfer uses.
      * @private
      */
     _createWrapper() {
@@ -125,7 +128,17 @@ class WavesurferMultitrack extends Plugin {
 
         const wrapper = document.createElement('div');
         wrapper.className = WRAPPER_CLASS;
-        this._applyWrapperStyles(wrapper, 0);
+
+        // Position absolutely so it overlays the video tech and inherits the
+        // player's real rendered width. z-index 2 puts it above vjs-tech (z:0).
+        wrapper.style.position = 'absolute';
+        wrapper.style.top = '0';
+        wrapper.style.left = '0';
+        wrapper.style.width = '100%';
+        wrapper.style.zIndex = '2';
+        wrapper.style.overflow = 'hidden';
+        wrapper.style.boxSizing = 'border-box';
+        wrapper.style.background = 'transparent';
 
         // Insert before the control bar so controls stay on top
         const controlBar = this.player.el_.querySelector('.vjs-control-bar');
@@ -139,7 +152,8 @@ class WavesurferMultitrack extends Plugin {
     }
 
     /**
-     * Apply height / overflow styles to the wrapper based on channel count and scrollFrom.
+     * Apply height / overflow styles to the wrapper AND resize the VideoJS player
+     * to fit all channels + control bar.
      * @param {HTMLElement} wrapper
      * @param {number} channelCount
      * @private
@@ -148,17 +162,37 @@ class WavesurferMultitrack extends Plugin {
         const { channelHeight, scrollFrom } = this.opts;
 
         if (scrollFrom > 0 && channelCount > 0) {
-            // Fixed height with scroll
+            // Fixed height with scroll — show N channels, scroll the rest
             const visibleRows = Math.min(scrollFrom, channelCount);
-            wrapper.style.height = (visibleRows * channelHeight) + 'px';
+            const wrapperHeight = visibleRows * channelHeight;
+            wrapper.style.height = wrapperHeight + 'px';
             wrapper.style.overflowY = 'auto';
-            wrapper.style.overflowX = 'hidden';
+            this._resizePlayer(wrapperHeight);
         } else {
-            // Expand to fit all channels
+            // Expand: stretch player to fit all channels
             const totalHeight = channelCount > 0 ? channelCount * channelHeight : 0;
             wrapper.style.height = totalHeight + 'px';
             wrapper.style.overflowY = 'hidden';
-            wrapper.style.overflowX = 'hidden';
+            if (channelCount > 0) {
+                this._resizePlayer(totalHeight);
+            }
+        }
+    }
+
+    /**
+     * Resize the VideoJS player element to accommodate the waveform area + control bar.
+     * @param {number} waveformHeight
+     * @private
+     */
+    _resizePlayer(waveformHeight) {
+        const controlBarEl = this.player.el_.querySelector('.vjs-control-bar');
+        const controlBarHeight = controlBarEl ? controlBarEl.offsetHeight || 30 : 30;
+        const totalHeight = waveformHeight + controlBarHeight;
+        this.player.el_.style.height = totalHeight + 'px';
+        try {
+            this.player.height(totalHeight);
+        } catch (e) {
+            // ignore — direct DOM style above is enough
         }
     }
 
@@ -189,6 +223,7 @@ class WavesurferMultitrack extends Plugin {
         });
         this._wavesurfers = [];
         this._waveReady = false;
+        this._readyCount = 0;
     }
 
     /**
@@ -248,39 +283,77 @@ class WavesurferMultitrack extends Plugin {
         Promise.all(fetchPromises).then((peaksArray) => {
             // Get the VideoJS media element for cursor sync
             const mediaEl = this._getMediaElement();
+            const totalChannels = peaksArray.length;
 
-            peaksArray.forEach((peaks, index) => {
-                const item = items[index];
-                const channelDiv = this._createChannelDiv(item);
-                this._wrapper.appendChild(channelDiv);
+            const doCreate = () => {
+                const duration = this.player.duration() || (mediaEl ? mediaEl.duration : 0) || 0;
+                this._log('Creating wavesurfers, duration=' + duration);
 
-                const waveDiv = channelDiv.querySelector('.' + CHANNEL_CLASS + '__wave');
-
-                const wsOptions = this._buildWaveSurferOptions(waveDiv, peaks, mediaEl);
-                let ws;
-                try {
-                    ws = WaveSurfer.create(wsOptions);
-                } catch (err) {
-                    this._log('WaveSurfer.create failed: ' + err.message, 'error');
-                    this.player.trigger(Event.WAVE_ERROR, err);
-                    return;
-                }
-
-                ws.on('ready', () => {
-                    this._log('WaveSurfer ready: track=' + (item.details && item.details.track) + ' ch=' + (item.details && item.details.channel));
-                    this._checkAllReady(peaksArray.length);
+                // Step 1: append ALL channel divs to the DOM first
+                const waveDivs = peaksArray.map((peaks, index) => {
+                    const item = items[index];
+                    const channelDiv = this._createChannelDiv(item);
+                    this._wrapper.appendChild(channelDiv);
+                    return channelDiv.querySelector('.' + CHANNEL_CLASS + '__wave');
                 });
 
-                ws.on('error', (err) => {
-                    this._log('WaveSurfer error: ' + err, 'error');
-                    this.player.trigger(Event.WAVE_ERROR, err);
+                // Step 2: force the browser to compute layout so clientWidth is real.
+                // This is the same approach videojs-wavesurfer uses with getBoundingClientRect().
+                const wrapperRect = this._wrapper.getBoundingClientRect();
+                this._log('Wrapper rect: ' + wrapperRect.width + 'x' + wrapperRect.height);
+
+                // Step 3: create WaveSurfer instances now that dimensions are known
+                waveDivs.forEach((waveDiv, index) => {
+                    const item = items[index];
+                    const peaks = peaksArray[index];
+
+                    const wsOptions = this._buildWaveSurferOptions(waveDiv, wrapperRect.width);
+                    let ws;
+                    try {
+                        ws = WaveSurfer.create(wsOptions);
+                    } catch (err) {
+                        this._log('WaveSurfer.create failed: ' + err.message, 'error');
+                        this.player.trigger(Event.WAVE_ERROR, err);
+                        return;
+                    }
+
+                    ws.on('ready', () => {
+                        this._log('WaveSurfer ready: track=' + (item.details && item.details.track) + ' ch=' + (item.details && item.details.channel));
+                        this._checkAllReady(totalChannels);
+                    });
+
+                    ws.on('error', (err) => {
+                        this._log('WaveSurfer error: ' + err, 'error');
+                        this.player.trigger(Event.WAVE_ERROR, err);
+                    });
+
+                    // Load media element + peaks. preload:'none' prevents wavesurfer from
+                    // calling mediaElement.load() which would interrupt VideoJS playback.
+                    if (mediaEl && peaks) {
+                        ws.load(mediaEl, this._peaksToArray(peaks), 'none', duration > 0 ? duration : undefined);
+                    } else if (mediaEl) {
+                        ws.load(mediaEl, null, 'none', duration > 0 ? duration : undefined);
+                    }
+
+                    this._wavesurfers.push(ws);
                 });
 
-                this._wavesurfers.push(ws);
-            });
+                this.player.trigger(Event.TRACKS_LOADED);
+                this._log('Tracks loaded (' + totalChannels + ' channels)');
+            };
 
-            this.player.trigger(Event.TRACKS_LOADED);
-            this._log('Tracks loaded (' + items.length + ' channels)');
+            // Wait for video metadata so we have a valid duration before drawing peaks.
+            // Without duration wavesurfer v6 can't calculate canvas width and draws nothing.
+            const duration = this.player.duration() || (mediaEl ? mediaEl.duration : 0) || 0;
+            if (duration > 0) {
+                doCreate();
+            } else {
+                this._log('Waiting for loadedmetadata to get duration...');
+                this.player.one(Event.LOADEDMETADATA, () => {
+                    this._log('loadedmetadata fired, creating wavesurfers');
+                    doCreate();
+                });
+            }
         });
     }
 
@@ -294,32 +367,41 @@ class WavesurferMultitrack extends Plugin {
         const track = (item.details && item.details.track) || '';
         const channel = (item.details && item.details.channel) || '';
 
-        const wrapper = document.createElement('div');
-        wrapper.className = CHANNEL_CLASS;
-        wrapper.style.height = this.opts.channelHeight + 'px';
-        wrapper.setAttribute('data-track', track);
-        wrapper.setAttribute('data-channel', channel);
+        const outer = document.createElement('div');
+        outer.className = CHANNEL_CLASS;
+        outer.style.position = 'relative';
+        outer.style.display = 'block';
+        outer.style.width = '100%';
+        outer.style.height = this.opts.channelHeight + 'px';
+        outer.style.boxSizing = 'border-box';
+        outer.setAttribute('data-track', track);
+        outer.setAttribute('data-channel', channel);
 
+        // WaveSurfer container — explicit pixel height, block display.
+        // Width is inherited (100% of outer which is 100% of wrapper = full player width).
         const waveDiv = document.createElement('div');
         waveDiv.className = CHANNEL_CLASS + '__wave';
-        waveDiv.style.height = '100%';
+        waveDiv.style.display = 'block';
         waveDiv.style.width = '100%';
+        waveDiv.style.height = this.opts.channelHeight + 'px';
+        waveDiv.style.boxSizing = 'border-box';
 
-        wrapper.appendChild(waveDiv);
-        return wrapper;
+        outer.appendChild(waveDiv);
+        return outer;
     }
 
     /**
-     * Build WaveSurfer options for a channel.
+     * Build WaveSurfer constructor options for a channel (wavesurfer.js v6 compatible).
+     * Note: peaks and media element are NOT passed here — they go to ws.load() after creation.
      * @param {HTMLElement} container
-     * @param {number[][]|null} peaks
-     * @param {HTMLMediaElement|null} mediaEl
+     * @param {number} containerWidth - Actual measured pixel width (from getBoundingClientRect).
      * @returns {Object}
      * @private
      */
-    _buildWaveSurferOptions(container, peaks, mediaEl) {
+    _buildWaveSurferOptions(container, containerWidth) {
         const opts = {
             container,
+            backend: 'MediaElement',
             height: this.opts.channelHeight,
             waveColor: this.opts.waveColor,
             progressColor: this.opts.progressColor,
@@ -328,7 +410,10 @@ class WavesurferMultitrack extends Plugin {
             normalize: this.opts.normalize,
             interact: true,
             hideScrollbar: true,
-            peaks: peaks || undefined,
+            // fillParent + scrollParent:false = stretch wave to container width.
+            // These are the correct wavesurfer v6 options (not 'responsive').
+            fillParent: true,
+            scrollParent: false,
         };
 
         if (this.opts.barWidth !== undefined) {
@@ -341,14 +426,18 @@ class WavesurferMultitrack extends Plugin {
             opts.barRadius = this.opts.barRadius;
         }
 
-        // Pass the VideoJS media element so WaveSurfer syncs cursor automatically
-        if (mediaEl) {
-            opts.media = mediaEl;
-        }
-
-        // If we have peaks but no media, we still need a duration.
-        // wavesurfer.js v7 infers it from peaks when media is present.
         return opts;
+    }
+
+    /**
+     * Convert Float32Array peaks to regular number[][] that wavesurfer.js v6 expects.
+     * @param {Float32Array[]|number[][]} peaks
+     * @returns {number[][]}
+     * @private
+     */
+    _peaksToArray(peaks) {
+        if (!peaks) return peaks;
+        return peaks.map((ch) => (ch instanceof Float32Array ? Array.from(ch) : ch));
     }
 
     /**
@@ -377,19 +466,13 @@ class WavesurferMultitrack extends Plugin {
      * @private
      */
     _checkAllReady(total) {
-        const readyCount = this._wavesurfers.filter((ws) => {
-            try {
-                return ws.getDuration() > 0;
-            } catch (e) {
-                return false;
-            }
-        }).length;
+        this._readyCount = (this._readyCount || 0) + 1;
 
-        if (readyCount >= total && !this._waveReady) {
+        if (this._readyCount >= total && !this._waveReady) {
             this._waveReady = true;
+            this._readyCount = 0;
             this._log('All waveforms ready');
 
-            // Show play button now that waveforms are ready
             if (this.player.controlBar && this.player.controlBar.playToggle) {
                 this.player.controlBar.playToggle.show();
             }
