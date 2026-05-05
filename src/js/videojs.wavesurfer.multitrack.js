@@ -285,9 +285,8 @@ class WavesurferMultitrack extends Plugin {
             const mediaEl = this._getMediaElement();
             const totalChannels = peaksArray.length;
 
-            const doCreate = () => {
+            const doCreate = (retryCount = 0) => {
                 const duration = this.player.duration() || (mediaEl ? mediaEl.duration : 0) || 0;
-                this._log('Creating wavesurfers, duration=' + duration);
 
                 // Step 1: append ALL channel divs to the DOM first
                 const waveDivs = peaksArray.map((peaks, index) => {
@@ -297,10 +296,27 @@ class WavesurferMultitrack extends Plugin {
                     return channelDiv.querySelector('.' + CHANNEL_CLASS + '__wave');
                 });
 
-                // Step 2: force the browser to compute layout so clientWidth is real.
-                // This is the same approach videojs-wavesurfer uses with getBoundingClientRect().
-                const wrapperRect = this._wrapper.getBoundingClientRect();
-                this._log('Wrapper rect: ' + wrapperRect.width + 'x' + wrapperRect.height);
+                // Step 2: measure the player width.
+                // We MUST have a non-zero width before creating WaveSurfer instances —
+                // drawBuffer() reads container.clientWidth synchronously and the value
+                // is captured in the prepareDraw() closure, so a later layout pass won't fix it.
+                // If the player hasn't been painted yet, defer one rAF and retry.
+                const playerRect = this.player.el_.getBoundingClientRect();
+                const playerWidth = playerRect.width || this.player.el_.offsetWidth || 0;
+
+                this._log('Player width: ' + playerWidth + ', duration: ' + duration);
+
+                if (playerWidth === 0) {
+                    this._log('Player has zero width, deferring to next animation frame (attempt ' + (retryCount + 1) + ')...');
+                    if (retryCount >= 20) {
+                        this._log('Player width still 0 after 20 retries — aborting. Ensure the player element has CSS width.', 'error');
+                        return;
+                    }
+                    // Clear divs we just added — they'll be re-added on retry
+                    this._wrapper.innerHTML = '';
+                    window.requestAnimationFrame(() => doCreate(retryCount + 1));
+                    return;
+                }
 
                 // Step 3: temporarily set mediaEl.preload='none' before creating any
                 // WaveSurfer instance. wavesurfer's loadElt() passes elt.preload to _load(),
@@ -316,7 +332,7 @@ class WavesurferMultitrack extends Plugin {
                     const item = items[index];
                     const peaks = peaksArray[index];
 
-                    const wsOptions = this._buildWaveSurferOptions(waveDiv, wrapperRect.width);
+                    const wsOptions = this._buildWaveSurferOptions(waveDiv, playerWidth);
                     let ws;
                     try {
                         ws = WaveSurfer.create(wsOptions);
@@ -328,8 +344,6 @@ class WavesurferMultitrack extends Plugin {
 
                     ws.on('waveform-ready', () => {
                         this._log('waveform-ready: track=' + (item.details && item.details.track) + ' ch=' + (item.details && item.details.channel));
-                        // waveform-ready fires synchronously when peaks are provided,
-                        // before 'ready'. Use it to count rendered channels.
                         this._checkAllReady(totalChannels);
                     });
 
