@@ -6,11 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="e57c8d3b-e129-45dd-b87d-037db406b00a" name="Changes" comment="#1 feat: initialize videojs-wavesurfer-multitrack plugin with basic structure and configuration">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/css/videojs.wavesurfer.multitrack.scss" beforeDir="false" afterPath="$PROJECT_DIR$/src/css/videojs.wavesurfer.multitrack.scss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/js/videojs.wavesurfer.multitrack.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/js/videojs.wavesurfer.multitrack.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -90,7 +85,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1777982699419</updated>
-      <workItem from="1777982700492" duration="5637000" />
+      <workItem from="1777982700492" duration="6909000" />
     </task>
     <task id="LOCAL-00001" summary="#1 feat: initialize videojs-wavesurfer-multitrack plugin with basic structure and configuration">
       <option name="closed" value="true" />

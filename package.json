@@ -6,6 +6,7 @@
   "license": "MIT",
   "main": "dist/videojs.wavesurfer.multitrack.js",
   "style": "dist/css/videojs.wavesurfer.multitrack.css",
+  "types": "src/js/videojs.wavesurfer.multitrack.d.ts",
   "files": [
     "dist/",
     "src/"

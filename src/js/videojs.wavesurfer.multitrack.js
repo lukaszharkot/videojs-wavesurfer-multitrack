@@ -302,7 +302,16 @@ class WavesurferMultitrack extends Plugin {
                 const wrapperRect = this._wrapper.getBoundingClientRect();
                 this._log('Wrapper rect: ' + wrapperRect.width + 'x' + wrapperRect.height);
 
-                // Step 3: create WaveSurfer instances now that dimensions are known
+                // Step 3: temporarily set mediaEl.preload='none' before creating any
+                // WaveSurfer instance. wavesurfer's loadElt() passes elt.preload to _load(),
+                // and _load() calls media.load() unless preload==='none'. Calling media.load()
+                // would reset VideoJS's video element, breaking playback for every instance.
+                const origPreload = mediaEl ? mediaEl.preload : null;
+                if (mediaEl) {
+                    mediaEl.preload = 'none';
+                }
+
+                // Step 4: create WaveSurfer instances now that dimensions are known
                 waveDivs.forEach((waveDiv, index) => {
                     const item = items[index];
                     const peaks = peaksArray[index];
@@ -317,8 +326,10 @@ class WavesurferMultitrack extends Plugin {
                         return;
                     }
 
-                    ws.on('ready', () => {
-                        this._log('WaveSurfer ready: track=' + (item.details && item.details.track) + ' ch=' + (item.details && item.details.channel));
+                    ws.on('waveform-ready', () => {
+                        this._log('waveform-ready: track=' + (item.details && item.details.track) + ' ch=' + (item.details && item.details.channel));
+                        // waveform-ready fires synchronously when peaks are provided,
+                        // before 'ready'. Use it to count rendered channels.
                         this._checkAllReady(totalChannels);
                     });
 
@@ -327,16 +338,29 @@ class WavesurferMultitrack extends Plugin {
                         this.player.trigger(Event.WAVE_ERROR, err);
                     });
 
-                    // Load media element + peaks. preload:'none' prevents wavesurfer from
-                    // calling mediaElement.load() which would interrupt VideoJS playback.
+                    // Load: pass the existing VideoJS media element so wavesurfer
+                    // subscribes to its events (play/pause/seeked) for cursor sync.
+                    // mediaEl.preload is already 'none' so _load() won't call media.load().
                     if (mediaEl && peaks) {
                         ws.load(mediaEl, this._peaksToArray(peaks), 'none', duration > 0 ? duration : undefined);
                     } else if (mediaEl) {
                         ws.load(mediaEl, null, 'none', duration > 0 ? duration : undefined);
                     }
 
+                    // For already-loaded media, 'canplay' won't re-fire naturally.
+                    // Manually fire it on the backend so isReady=true and seekTo() works
+                    // (wavesurfer.seekTo() defers if isReady===false).
+                    if (mediaEl && mediaEl.readyState >= 3 && ws.backend) {
+                        ws.backend.fireEvent('canplay');
+                    }
+
                     this._wavesurfers.push(ws);
                 });
+
+                // Restore original preload attribute
+                if (mediaEl && origPreload !== null) {
+                    mediaEl.preload = origPreload;
+                }
 
                 this.player.trigger(Event.TRACKS_LOADED);
                 this._log('Tracks loaded (' + totalChannels + ' channels)');
@@ -488,6 +512,20 @@ class WavesurferMultitrack extends Plugin {
     /** @private */
     _onTimeUpdate() {
         this._updateTimeDisplay();
+        // Robust cursor sync: directly update drawer progress on every timeupdate.
+        // This is a fallback for cases where wavesurfer's own audioprocess rAF loop
+        // doesn't fire (e.g. if the backend timer didn't start correctly).
+        const duration = this.player.duration();
+        if (duration > 0) {
+            const progress = Math.min(1, Math.max(0, this.player.currentTime() / duration));
+            this._wavesurfers.forEach((ws) => {
+                try {
+                    if (ws.drawer) {
+                        ws.drawer.progress(progress);
+                    }
+                } catch (e) { /* ignore */ }
+            });
+        }
     }
 
     /** @private */
