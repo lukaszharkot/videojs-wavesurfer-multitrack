@@ -1,0 +1,57 @@
+// videojs-wavesurfer-multitrack styles
+
+.vjs-wavesurfer-multitrack {
+    // Ensure controlbar stays on top of waveform wrapper
+    .vjs-control-bar {
+        z-index: 3;
+        position: relative;
+    }
+
+    // Ensure menus and overlays are clickable above the waveform
+    .vjs-menu-content,
+    .vjs-progress-control {
+        z-index: 4;
+    }
+
+    .vjs-modal-dialog,
+    .vjs-text-track-display {
+        z-index: 4;
+    }
+
+    // Always show custom controls
+    &.vjs-using-native-controls .vjs-control-bar {
+        display: flex !important;
+    }
+}
+
+// The scrollable/expandable container that holds all channel strips
+.vjs-multitrack-wrapper {
+    position: relative;
+    width: 100%;
+    background: transparent;
+    box-sizing: border-box;
+    // height and overflow set dynamically by JS
+}
+
+// Individual channel strip (one per track/channel)
+.vjs-multitrack-channel {
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+
+    // Inner wave container
+    &__wave {
+        width: 100%;
+        height: 100%;
+        display: block;
+
+        // WaveSurfer renders a <canvas> inside — make sure it fills the div
+        > div {
+            height: 100% !important;
+        }
+
+        canvas {
+            display: block;
+        }
+    }
+}
