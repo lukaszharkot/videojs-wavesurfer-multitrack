@@ -59,12 +59,16 @@
     <div class="controls">
         <button id="btn-load-tracks">Load tracks (same)</button>
         <button id="btn-swap-tracks">Swap tracks (empty)</button>
+        <button id="btn-track1">Show Track1</button>
+        <button id="btn-track2">Show Track2</button>
+        <button id="btn-all-tracks">Show all tracks</button>
     </div>
 
     <script>
         // ---------------------------------------------------------------------------
         // Example waveform-json track list (replace URLs with real ones from your BE)
         // Each entry has:   type, url, details: { track, channel }
+        // track and channel are numbers, e.g. 1, 2
         // ---------------------------------------------------------------------------
         const TRACKS_A = [
             // Dummy example — replace with real audiowaveform JSON URLs
@@ -118,6 +122,20 @@
         // Demo: swap to empty (clears waveforms)
         document.getElementById('btn-swap-tracks').addEventListener('click', function () {
             player.wavesurferMultitrack().loadTracks([]);
+        });
+
+        // Demo: filter to a specific track
+        document.getElementById('btn-track1').addEventListener('click', function () {
+            player.wavesurferMultitrack().changeTrack(1);
+        });
+
+        document.getElementById('btn-track2').addEventListener('click', function () {
+            player.wavesurferMultitrack().changeTrack(2);
+        });
+
+        // Demo: clear track filter — show all
+        document.getElementById('btn-all-tracks').addEventListener('click', function () {
+            player.wavesurferMultitrack().changeTrack(null);
         });
     </script>
 </body>

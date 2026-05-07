@@ -36,7 +36,7 @@ class WavesurferMultitrack extends Plugin {
      * @param {Object} options
      */
     constructor(player, options) {
-        super(player, options);
+         super(player, options);
 
         // Merge defaults + user options
         if (videojs.obj !== undefined) {
@@ -56,6 +56,10 @@ class WavesurferMultitrack extends Plugin {
         this._waveReady = false;
         /** @type {number} */
         this._readyCount = 0;
+        /** @type {Array} Full raw tracks array as last passed to loadTracks(). */
+        this._allTracks = [];
+        /** @type {string|null} Active track filter — null means show all tracks. */
+        this._activeTrack = null;
 
         // Add plugin CSS class to player
         player.addClass(PLUGIN_CLASS);
@@ -170,21 +174,21 @@ class WavesurferMultitrack extends Plugin {
      * to fit all channels + control bar.
      * @param {HTMLElement} wrapper
      * @param {number} channelCount
+     * @param {number} effectiveChannelHeight - Actual per-channel height after auto-fit.
      * @private
      */
-    _applyWrapperStyles(wrapper, channelCount) {
+    _applyWrapperStyles(wrapper, channelCount, effectiveChannelHeight) {
         const { channelHeight, scrollFrom } = this.opts;
 
         if (scrollFrom > 0 && channelCount > 0) {
-            // Fixed height with scroll — show N channels, scroll the rest
-            const visibleRows = Math.min(scrollFrom, channelCount);
-            const wrapperHeight = visibleRows * channelHeight;
+            // Viewport height is always scrollFrom * channelHeight
+            const wrapperHeight = scrollFrom * channelHeight;
             wrapper.style.height = wrapperHeight + 'px';
-            wrapper.style.overflowY = 'auto';
+            wrapper.style.overflowY = channelCount > scrollFrom ? 'auto' : 'hidden';
             this._resizePlayer(wrapperHeight);
         } else {
-            // Expand: stretch player to fit all channels
-            const totalHeight = channelCount > 0 ? channelCount * channelHeight : 0;
+            // Expand: stretch player to fit all channels at their effective height
+            const totalHeight = channelCount > 0 ? channelCount * effectiveChannelHeight : 0;
             wrapper.style.height = totalHeight + 'px';
             wrapper.style.overflowY = 'hidden';
             if (channelCount > 0) {
@@ -257,9 +261,18 @@ class WavesurferMultitrack extends Plugin {
 
         this._log('loadTracks: loading ' + tracks.length + ' items');
 
-        // Filter and sort: waveform-json only, sorted by track then channel
+        // Persist the full raw array so changeTrack() can re-filter without a new loadTracks() call
+        this._allTracks = tracks;
+
+        // Filter: waveform-json only, then by active track (if set)
         const items = tracks
-            .filter((t) => t && t.type === 'waveform-json' && t.url)
+            .filter((t) => {
+                if (!t || t.type !== 'waveform-json' || !t.url) return false;
+                if (this._activeTrack !== null && this._activeTrack !== undefined) {
+                    return (t.details && t.details.track) === this._activeTrack;
+                }
+                return true;
+            })
             .sort((a, b) => {
                 const ta = (a.details && a.details.track) || 0;
                 const tb = (b.details && b.details.track) || 0;
@@ -270,7 +283,12 @@ class WavesurferMultitrack extends Plugin {
             });
 
         if (items.length === 0) {
-            this._log('loadTracks: no waveform-json items found', 'warn');
+            const filterNote = this._activeTrack ? ' for track "' + this._activeTrack + '"' : '';
+            this._log('loadTracks: no waveform-json items found' + filterNote, 'warn');
+            this._destroyWaveSurfers();
+            if (this._wrapper) {
+                this._wrapper.innerHTML = '';
+            }
             return;
         }
 
@@ -283,8 +301,20 @@ class WavesurferMultitrack extends Plugin {
             this._wrapper.innerHTML = '';
         }
 
+        // Calculate effective per-channel height.
+        // When autoChannelHeight is true, scrollFrom is set, and channels fit within
+        // the viewport — divide the total viewport height equally between channels.
+        // If channels exceed scrollFrom the fixed channelHeight takes over and scroll kicks in.
+        const { channelHeight, scrollFrom } = this.opts;
+        const isAutoMode = this.opts.autoChannelHeight && scrollFrom > 0 && items.length > 0 && items.length <= scrollFrom;
+        const autoHeight = isAutoMode
+            ? Math.floor((scrollFrom * channelHeight) / items.length)
+            : channelHeight;
+        const maxHeight = this.opts.maxHeight;
+        const effectiveChannelHeight = (isAutoMode && maxHeight && autoHeight > maxHeight) ? maxHeight : autoHeight;
+
         // Update wrapper height for new channel count
-        this._applyWrapperStyles(this._wrapper, items.length);
+        this._applyWrapperStyles(this._wrapper, items.length, effectiveChannelHeight);
 
         // Fetch all peaks then create WaveSurfer instances
         const fetchPromises = items.map((item) =>
@@ -305,7 +335,7 @@ class WavesurferMultitrack extends Plugin {
                 // Step 1: append ALL channel divs to the DOM first
                 const waveDivs = peaksArray.map((peaks, index) => {
                     const item = items[index];
-                    const channelDiv = this._createChannelDiv(item);
+                    const channelDiv = this._createChannelDiv(item, effectiveChannelHeight);
                     this._wrapper.appendChild(channelDiv);
                     return channelDiv.querySelector('.' + CHANNEL_CLASS + '__wave');
                 });
@@ -418,10 +448,12 @@ class WavesurferMultitrack extends Plugin {
     /**
      * Create the DOM element for a single channel strip.
      * @param {Object} item - Waveform-json item from BE.
+     * @param {number} [channelHeight] - Override height for this channel strip.
      * @returns {HTMLElement}
      * @private
      */
-    _createChannelDiv(item) {
+    _createChannelDiv(item, channelHeight) {
+        const height = channelHeight || this.opts.channelHeight;
         const track = (item.details && item.details.track) || '';
         const channel = (item.details && item.details.channel) || '';
 
@@ -430,7 +462,7 @@ class WavesurferMultitrack extends Plugin {
         outer.style.position = 'relative';
         outer.style.display = 'block';
         outer.style.width = '100%';
-        outer.style.height = this.opts.channelHeight + 'px';
+        outer.style.height = height + 'px';
         outer.style.boxSizing = 'border-box';
         outer.style.borderBottom = '1px solid ' + (this.opts.dividerColor || 'rgba(255,255,255,0.15)');
         outer.setAttribute('data-track', track);
@@ -440,9 +472,9 @@ class WavesurferMultitrack extends Plugin {
         waveDiv.className = CHANNEL_CLASS + '__wave';
         waveDiv.style.display = 'block';
         waveDiv.style.width = '100%';
-        waveDiv.style.height = this.opts.channelHeight + 'px';
+        waveDiv.style.height = height + 'px';
         waveDiv.style.boxSizing = 'border-box';
-        waveDiv.dataset.waveHeight = this.opts.channelHeight;
+        waveDiv.dataset.waveHeight = height;
 
         outer.appendChild(waveDiv);
 
@@ -454,7 +486,7 @@ class WavesurferMultitrack extends Plugin {
             label.style.top = '6px';
             label.style.left = '8px';
             label.style.zIndex = '10';
-            label.style.fontSize = '11px';
+            label.style.fontSize = '10px';
             label.style.fontWeight = '600';
             label.style.letterSpacing = '0.03em';
             label.style.pointerEvents = 'none';
@@ -671,30 +703,34 @@ class WavesurferMultitrack extends Plugin {
     }
 
     /**
-     * Start playback.
+     * Filter displayed channels to a single track by its numeric identifier.
+     * Passing null (or calling with no argument) clears the filter and shows all tracks.
+     * The number must match `details.track` in the items passed to loadTracks().
+     *
+     * @param {number|null} [trackId] - e.g. 1. Pass null to show all.
+     *
+     * @example
+     * plugin.changeTrack(1);     // show only track 1 channels
+     * plugin.changeTrack(null);  // back to all tracks
      */
-    play() {
-        this._log('play()');
-        this.player.play();
-    }
+    changeTrack(trackId) {
+        const wasPlaying = !this.player.paused();
+        const savedTime = this.player.currentTime();
 
-    /**
-     * Pause playback.
-     */
-    pause() {
-        this._log('pause()');
-        this.player.pause();
-    }
+        this._activeTrack = (trackId !== undefined && trackId !== null)
+            ? Number(trackId)
+            : null;
+        this._log('changeTrack: ' + (this._activeTrack !== null ? this._activeTrack : '(all)'));
 
-    /**
-     * Set volume (0–1).
-     * @param {number} volume
-     */
-    setVolume(volume) {
-        if (volume !== undefined) {
-            this._log('setVolume(' + volume + ')');
-            this.player.volume(volume);
-        }
+        // Restore playback position (and resume if playing) once new waveforms are ready
+        this.player.one(Event.WAVE_READY, () => {
+            this.player.currentTime(savedTime);
+            if (wasPlaying) {
+                this.player.play();
+            }
+        });
+
+        this.loadTracks(this._allTracks);
     }
 
     /**

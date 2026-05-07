@@ -6,12 +6,13 @@ Inspired by and modelled after [videojs-wavesurfer](https://github.com/collab-pr
 
 ## Features
 
-- 🎚️ Multiple stacked waveform channels, one per audio track/channel
-- 🔄 Cursor automatically syncs with VideoJS playback (no manual polling)
-- 🖱️ Click-to-seek on any channel waveform
-- 📜 Scrollable container (fixed height) or expandable (stretch to fit all channels)
-- 🔁 `loadTracks()` — swap waveforms live without reinitializing the VideoJS player
-- 🔑 XHR credentials support for signed/authenticated waveform JSON URLs
+- Multiple stacked waveform channels, one per audio track/channel
+- Cursor automatically syncs with VideoJS playback (no manual polling)
+- Click-to-seek on any channel waveform
+- Scrollable container (fixed height) or expandable (stretch to fit all channels)
+- `loadTracks()` — swap waveforms live without reinitializing the VideoJS player
+- `changeTrack()` — filter to a single track by ID, playback continues seamlessly
+- XHR credentials support for signed/authenticated waveform JSON URLs
 - Accepts waveform data directly in the format returned by your backend
 
 ## Installation
@@ -65,7 +66,7 @@ player.on('waveError', (e, err) => console.error('Waveform error', err));
 
 ### Input track format
 
-Pass the `waveform-json` entries from your backend directly as `tracks`. The plugin filters for `type === "waveform-json"` and sorts by `details.track` then `details.channel`:
+Pass the `waveform-json` entries directly as `tracks`. The plugin filters for `type === "waveform-json"` and sorts by `details.track` then `details.channel`:
 
 ```json
 [
@@ -103,6 +104,20 @@ player.src({ src: newVideoUrl, type: 'video/mp4' });
 player.wavesurferMultitrack().loadTracks(newTracksArray);
 ```
 
+## Filtering by track — `changeTrack()`
+
+When your tracks array contains multiple tracks (e.g. original + dubbed), use `changeTrack()` to switch between them. Playback position and state are preserved across the switch.
+
+```js
+const plugin = player.wavesurferMultitrack();
+
+plugin.changeTrack(1);     // show only channels where details.track === 1
+plugin.changeTrack(2);     // switch to track 2 — resumes from same position
+plugin.changeTrack(null);  // clear filter, show all tracks
+```
+
+The `trackId` must match the `details.track` field in your waveform-json items.
+
 ## Options
 
 | Option | Type | Default | Description |
@@ -110,6 +125,8 @@ player.wavesurferMultitrack().loadTracks(newTracksArray);
 | `tracks` | `Array` | `[]` | Array of BE thumbnail objects. Items with `type === "waveform-json"` are used. |
 | `channelHeight` | `Number` | `100` | Height in px for each waveform channel strip. |
 | `scrollFrom` | `Number` | `0` | `0` = stretch container height to fit all channels. `N` = fix container to `N * channelHeight` px and enable vertical scroll. |
+| `autoChannelHeight` | `Boolean` | `false` | When `true` and `scrollFrom > 0`, channels auto-fit their height equally to fill the viewport while their count is ≤ `scrollFrom`. Once count exceeds `scrollFrom` the fixed `channelHeight` takes over and scroll kicks in. |
+| `maxHeight` | `Number` | `undefined` | Caps the auto-calculated channel height when `autoChannelHeight` is active. Has no effect otherwise. |
 | `waveColor` | `String` | `'#999'` | Waveform (unplayed) color. |
 | `progressColor` | `String` | `'#555'` | Progress (played) color. |
 | `cursorColor` | `String` | `'#fff'` | Playback cursor color. |
@@ -119,7 +136,7 @@ player.wavesurferMultitrack().loadTracks(newTracksArray);
 | `barRadius` | `Number` | `undefined` | Bar border radius in px. |
 | `normalize` | `Boolean` | `false` | Normalize peaks to max amplitude. |
 | `xhr` | `Object` | `{}` | Fetch options for waveform JSON requests. Supports `{ credentials: 'include' \| 'same-origin' \| 'omit' }`. |
-| `displayMilliseconds` | `Boolean` | `true` | Show milliseconds in time display. |
+| `displayMilliseconds` | `Boolean` | `false` | Show milliseconds in time display. |
 | `debug` | `Boolean` | `false` | Enable debug console output. |
 
 ## Events
@@ -139,9 +156,7 @@ Events are triggered on the VideoJS `player` instance:
 const plugin = player.wavesurferMultitrack();
 
 plugin.loadTracks(tracksArray);  // Swap waveforms live
-plugin.play();                   // Start playback
-plugin.pause();                  // Pause playback
-plugin.setVolume(0.5);           // Set volume (0–1)
+plugin.changeTrack(1);           // Filter to track 1 (null = show all)
 plugin.getCurrentTime();         // Current time in seconds
 plugin.getDuration();            // Duration in seconds
 plugin.isReady();                // true when all waveforms are rendered

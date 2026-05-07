@@ -27,7 +27,9 @@ export interface WaveformTrack {
     /** Optional label rendered in the top-left corner of the channel strip (e.g. "Track 1 L"). */
     label?: string;
     details?: {
+        /** Numeric track identifier. Used by changeTrack() for filtering. */
         track?: number;
+        /** Numeric channel identifier. */
         channel?: number;
         [key: string]: unknown;
     };
@@ -48,6 +50,18 @@ export interface Options {
     channelHeight?: number;
     /** 0 = expand player; N = fix height at N*channelHeight and scroll. Default: 0 */
     scrollFrom?: number;
+    /**
+     * When true and scrollFrom > 0, channels auto-fit to fill the viewport height equally
+     * while their count is <= scrollFrom. Once count exceeds scrollFrom the fixed
+     * channelHeight takes over and the wrapper scrolls. Default: false
+     */
+    autoChannelHeight?: boolean;
+    /**
+     * Maximum per-channel height in pixels when autoChannelHeight is active.
+     * Prevents channels from growing too tall when there are few of them.
+     * Only applies when autoChannelHeight=true and scrollFrom > 0.
+     */
+    maxHeight?: number;
     waveColor?: string;
     progressColor?: string;
     cursorColor?: string;
@@ -65,18 +79,35 @@ export interface Options {
 
 /** The plugin instance returned by `player.wavesurferMultitrack()`. */
 export interface WavesurferMultitrackPlugin {
-    /** Reload waveforms without reinitialising the VideoJS player. */
+    /**
+     * Load (or hot-swap) waveform tracks. Filters for type=waveform-json and applies
+     * the active track filter set by changeTrack(). Safe to call multiple times.
+     */
     loadTracks(tracks: WaveformTrack[]): void;
+    /**
+     * Filter displayed channels to a single track by its numeric identifier.
+     * Passing null (or undefined) clears the filter and shows all tracks.
+     * The number must match `details.track` in the items passed to loadTracks().
+     *
+     * @example
+     * plugin.changeTrack(1);     // show only track 1 channels
+     * plugin.changeTrack(null);  // back to all tracks
+     */
+    changeTrack(trackName: number | null): void;
+    /** Returns true when all waveforms have been rendered. */
+    isReady(): boolean;
+    /** Get current playback time in seconds. */
+    getCurrentTime(): number;
+    /** Get waveform duration in seconds. */
+    getDuration(): number;
     dispose(): void;
 }
 
 /**
- * Convenience alias for `videojs.Player` — kept for the same naming convention
- * as `videojs-wavesurfer` (Wavesurfer.VideojsWavesurfer).
- * The `wavesurferMultitrack()` method is added via module augmentation above,
- * so `videojs.Player` is already sufficient.
+ * Convenience alias — kept for naming-convention parity with videojs-wavesurfer.
+ * The wavesurferMultitrack() method is added to every player via module augmentation above.
  */
-export type VideojsWavesurferMultitrack = videojs.Player;
+export type VideojsWavesurferMultitrack = ReturnType<typeof videojs>;
 
 /**
  * Parse an audiowaveform JSON object into wavesurfer.js peaks format.

@@ -57,11 +57,19 @@
         canvas {
             display: block;
         }
+
+        // Target both the waveform canvas and the progress canvas rendered by WaveSurfer
+        wave > canvas,
+        wave > wave > canvas {
+            width: calc(100% - 20px) !important;
+            top: auto !important;
+            bottom: 3px !important;
+        }
     }
 
     // Label strip rendered above the waveform (not overlaid on it)
     &__label {
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.03em;
         pointer-events: none;
