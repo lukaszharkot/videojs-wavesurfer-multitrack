@@ -181,8 +181,9 @@ class WavesurferMultitrack extends Plugin {
         const { channelHeight, scrollFrom } = this.opts;
 
         if (scrollFrom > 0 && channelCount > 0) {
-            // Viewport height is always scrollFrom * channelHeight
-            const wrapperHeight = scrollFrom * channelHeight;
+            const maxWrapperHeight = scrollFrom * channelHeight;
+            const contentHeight = channelCount * effectiveChannelHeight;
+            const wrapperHeight = Math.min(contentHeight, maxWrapperHeight);
             wrapper.style.height = wrapperHeight + 'px';
             wrapper.style.overflowY = channelCount > scrollFrom ? 'auto' : 'hidden';
             this._resizePlayer(wrapperHeight);
@@ -306,12 +307,17 @@ class WavesurferMultitrack extends Plugin {
         // the viewport — divide the total viewport height equally between channels.
         // If channels exceed scrollFrom the fixed channelHeight takes over and scroll kicks in.
         const { channelHeight, scrollFrom } = this.opts;
-        const isAutoMode = this.opts.autoChannelHeight && scrollFrom > 0 && items.length > 0 && items.length <= scrollFrom;
-        const autoHeight = isAutoMode
-            ? Math.floor((scrollFrom * channelHeight) / items.length)
-            : channelHeight;
         const maxHeight = this.opts.maxHeight;
-        const effectiveChannelHeight = (isAutoMode && maxHeight && autoHeight > maxHeight) ? maxHeight : autoHeight;
+        const isAutoMode = this.opts.autoChannelHeight && scrollFrom > 0 && items.length > 0 && items.length <= scrollFrom;
+
+        let effectiveChannelHeight;
+        if (isAutoMode) {
+            const viewportHeight = scrollFrom * channelHeight;
+            const cappedHeight = maxHeight ? Math.min(viewportHeight, maxHeight) : viewportHeight;
+            effectiveChannelHeight = Math.floor(cappedHeight / items.length);
+        } else {
+            effectiveChannelHeight = channelHeight;
+        }
 
         // Update wrapper height for new channel count
         this._applyWrapperStyles(this._wrapper, items.length, effectiveChannelHeight);

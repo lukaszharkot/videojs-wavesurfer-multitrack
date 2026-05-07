@@ -126,7 +126,7 @@ The `trackId` must match the `details.track` field in your waveform-json items.
 | `channelHeight` | `Number` | `100` | Height in px for each waveform channel strip. |
 | `scrollFrom` | `Number` | `0` | `0` = stretch container height to fit all channels. `N` = fix container to `N * channelHeight` px and enable vertical scroll. |
 | `autoChannelHeight` | `Boolean` | `false` | When `true` and `scrollFrom > 0`, channels auto-fit their height equally to fill the viewport while their count is ≤ `scrollFrom`. Once count exceeds `scrollFrom` the fixed `channelHeight` takes over and scroll kicks in. |
-| `maxHeight` | `Number` | `undefined` | Caps the auto-calculated channel height when `autoChannelHeight` is active. Has no effect otherwise. |
+| `maxHeight` | `Number` | `undefined` | Maximum total waveform area height in px when `autoChannelHeight` is active. Caps the whole wrapper regardless of channel count. Has no effect otherwise. |
 | `waveColor` | `String` | `'#999'` | Waveform (unplayed) color. |
 | `progressColor` | `String` | `'#555'` | Progress (played) color. |
 | `cursorColor` | `String` | `'#fff'` | Playback cursor color. |

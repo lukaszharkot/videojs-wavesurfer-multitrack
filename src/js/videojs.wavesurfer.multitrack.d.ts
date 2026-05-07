@@ -57,9 +57,9 @@ export interface Options {
      */
     autoChannelHeight?: boolean;
     /**
-     * Maximum per-channel height in pixels when autoChannelHeight is active.
-     * Prevents channels from growing too tall when there are few of them.
-     * Only applies when autoChannelHeight=true and scrollFrom > 0.
+     * Maximum total waveform area height in pixels when autoChannelHeight is active.
+     * Caps the entire wrapper (all channels combined), not a single channel.
+     * Has no effect when autoChannelHeight is false or scrollFrom is 0.
      */
     maxHeight?: number;
     waveColor?: string;
