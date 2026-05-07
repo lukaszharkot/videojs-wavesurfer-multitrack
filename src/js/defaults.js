@@ -11,9 +11,9 @@ const pluginDefaultOptions = {
     // 0 = stretch the player container to fit all channels.
     // N = fix container height to N * channelHeight and enable vertical scroll.
     scrollFrom: 0,
-    // When true and scrollFrom > 0, channels auto-fit their height to fill the
-    // viewport equally as long as their count is <= scrollFrom.
-    // Once channels exceed scrollFrom the fixed channelHeight takes over and scroll kicks in.
+    // When true, the total waveform area is sized to playerWidth * 9/16 (16:9 ratio)
+    // and channels divide that height equally. Recalculates on resize.
+    // scrollFrom is ignored when autoChannelHeight is true.
     autoChannelHeight: false,
     // Wavesurfer visual options (applied to every channel instance).
     waveColor: '#999',
@@ -31,7 +31,8 @@ const pluginDefaultOptions = {
     // Fetch options used when loading waveform JSON files.
     // Supports: { credentials: 'include' | 'same-origin' | 'omit' }
     xhr: {},
-    // When autoChannelHeight is true, caps the auto-calculated per-channel height.
+    // Maximum total waveform area height in px when autoChannelHeight is true.
+    // Caps the entire wrapper (all channels combined), not a single channel.
     maxHeight: undefined,
     displayMilliseconds: false,
     // Enable debug console output.

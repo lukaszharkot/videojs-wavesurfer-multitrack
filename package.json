@@ -1,6 +1,6 @@
 {
   "name": "@lukaszharkot/videojs-wavesurfer-multitrack",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "video.js plugin that displays multiple stacked waveform channels using wavesurfer.js",
   "author": "Lukasz Harkot",
   "license": "MIT",

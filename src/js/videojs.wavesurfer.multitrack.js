@@ -75,7 +75,6 @@ class WavesurferMultitrack extends Plugin {
      * @private
      */
     _initialize() {
-        this._log('Plugin initializing');
 
         // Hide big play button (wavesurfer click-to-seek will handle interaction)
         if (this.player.bigPlayButton) {
@@ -180,7 +179,7 @@ class WavesurferMultitrack extends Plugin {
     _applyWrapperStyles(wrapper, channelCount, effectiveChannelHeight) {
         const { channelHeight, scrollFrom } = this.opts;
 
-        if (scrollFrom > 0 && channelCount > 0) {
+        if (!this.opts.autoChannelHeight && scrollFrom > 0 && channelCount > 0) {
             const maxWrapperHeight = scrollFrom * channelHeight;
             const contentHeight = channelCount * effectiveChannelHeight;
             const wrapperHeight = Math.min(contentHeight, maxWrapperHeight);
@@ -256,11 +255,9 @@ class WavesurferMultitrack extends Plugin {
      */
     loadTracks(tracks) {
         if (!tracks || !Array.isArray(tracks)) {
-            this._log('loadTracks: invalid tracks argument', 'warn');
+        this._log('loadTracks: invalid tracks argument', 'warn');
             return;
         }
-
-        this._log('loadTracks: loading ' + tracks.length + ' items');
 
         // Persist the full raw array so changeTrack() can re-filter without a new loadTracks() call
         this._allTracks = tracks;
@@ -302,25 +299,19 @@ class WavesurferMultitrack extends Plugin {
             this._wrapper.innerHTML = '';
         }
 
-        // Calculate effective per-channel height.
-        // When autoChannelHeight is true, scrollFrom is set, and channels fit within
-        // the viewport — divide the total viewport height equally between channels.
-        // If channels exceed scrollFrom the fixed channelHeight takes over and scroll kicks in.
+        // For non-auto mode: calculate effective channel height and apply wrapper styles now.
+        // For auto 16:9 mode: height depends on measured playerWidth, calculated inside doCreate().
         const { channelHeight, scrollFrom } = this.opts;
-        const maxHeight = this.opts.maxHeight;
-        const isAutoMode = this.opts.autoChannelHeight && scrollFrom > 0 && items.length > 0 && items.length <= scrollFrom;
-
-        let effectiveChannelHeight;
-        if (isAutoMode) {
-            const viewportHeight = scrollFrom * channelHeight;
-            const cappedHeight = maxHeight ? Math.min(viewportHeight, maxHeight) : viewportHeight;
-            effectiveChannelHeight = Math.floor(cappedHeight / items.length);
-        } else {
-            effectiveChannelHeight = channelHeight;
+        let effectiveChannelHeight = channelHeight;
+        if (!this.opts.autoChannelHeight) {
+            const isScrollAutoMode = scrollFrom > 0 && items.length > 0 && items.length <= scrollFrom;
+            if (isScrollAutoMode) {
+                const viewportHeight = scrollFrom * channelHeight;
+                const cappedHeight = this.opts.maxHeight ? Math.min(viewportHeight, this.opts.maxHeight) : viewportHeight;
+                effectiveChannelHeight = Math.floor(cappedHeight / items.length);
+            }
+            this._applyWrapperStyles(this._wrapper, items.length, effectiveChannelHeight);
         }
-
-        // Update wrapper height for new channel count
-        this._applyWrapperStyles(this._wrapper, items.length, effectiveChannelHeight);
 
         // Fetch all peaks then create WaveSurfer instances
         const fetchPromises = items.map((item) =>
@@ -338,10 +329,35 @@ class WavesurferMultitrack extends Plugin {
             const doCreate = (retryCount = 0) => {
                 const duration = this.player.duration() || (mediaEl ? mediaEl.duration : 0) || 0;
 
-                // Step 1: append ALL channel divs to the DOM first
+                // Step 1: measure player width FIRST.
+                // WaveSurfer reads container.clientWidth synchronously in drawBuffer(), so
+                // we must confirm a non-zero width before creating any instance.
+                const playerRect = this.player.el_.getBoundingClientRect();
+                const playerWidth = playerRect.width || this.player.el_.offsetWidth || 0;
+
+                if (playerWidth === 0) {
+                    if (retryCount >= 20) {
+                        this._log('Player width still 0 after 20 retries — aborting. Ensure the player element has CSS width.', 'error');
+                        return;
+                    }
+                    window.requestAnimationFrame(() => doCreate(retryCount + 1));
+                    return;
+                }
+
+                // Step 2: for auto 16:9 mode, calculate channel height from actual width,
+                // then apply wrapper styles. For non-auto, both were done before the fetch.
+                let channelH = effectiveChannelHeight;
+                if (this.opts.autoChannelHeight) {
+                    const totalHeight = Math.round(playerWidth * 9 / 16);
+                    const cappedHeight = this.opts.maxHeight ? Math.min(totalHeight, this.opts.maxHeight) : totalHeight;
+                    channelH = Math.max(1, Math.floor(cappedHeight / peaksArray.length));
+                    this._applyWrapperStyles(this._wrapper, peaksArray.length, channelH);
+                }
+
+                // Step 3: append ALL channel divs to the DOM
                 const waveDivs = peaksArray.map((peaks, index) => {
                     const item = items[index];
-                    const channelDiv = this._createChannelDiv(item, effectiveChannelHeight);
+                    const channelDiv = this._createChannelDiv(item, channelH);
                     this._wrapper.appendChild(channelDiv);
                     return channelDiv.querySelector('.' + CHANNEL_CLASS + '__wave');
                 });
@@ -352,29 +368,7 @@ class WavesurferMultitrack extends Plugin {
                     lastChannel.style.borderBottom = 'none';
                 }
 
-                // Step 2: measure the player width.
-                // We MUST have a non-zero width before creating WaveSurfer instances —
-                // drawBuffer() reads container.clientWidth synchronously and the value
-                // is captured in the prepareDraw() closure, so a later layout pass won't fix it.
-                // If the player hasn't been painted yet, defer one rAF and retry.
-                const playerRect = this.player.el_.getBoundingClientRect();
-                const playerWidth = playerRect.width || this.player.el_.offsetWidth || 0;
-
-                this._log('Player width: ' + playerWidth + ', duration: ' + duration);
-
-                if (playerWidth === 0) {
-                    this._log('Player has zero width, deferring to next animation frame (attempt ' + (retryCount + 1) + ')...');
-                    if (retryCount >= 20) {
-                        this._log('Player width still 0 after 20 retries — aborting. Ensure the player element has CSS width.', 'error');
-                        return;
-                    }
-                    // Clear divs we just added — they'll be re-added on retry
-                    this._wrapper.innerHTML = '';
-                    window.requestAnimationFrame(() => doCreate(retryCount + 1));
-                    return;
-                }
-
-                // Step 3: temporarily set mediaEl.preload='none' before creating any
+                // Step 4: temporarily set mediaEl.preload='none' before creating any
                 // WaveSurfer instance. wavesurfer's loadElt() passes elt.preload to _load(),
                 // and _load() calls media.load() unless preload==='none'. Calling media.load()
                 // would reset VideoJS's video element, breaking playback for every instance.
@@ -383,7 +377,7 @@ class WavesurferMultitrack extends Plugin {
                     mediaEl.preload = 'none';
                 }
 
-                // Step 4: create WaveSurfer instances now that dimensions are known
+                // Step 5: create WaveSurfer instances now that dimensions are known
                 waveDivs.forEach((waveDiv, index) => {
                     const item = items[index];
                     const peaks = peaksArray[index];
@@ -399,7 +393,6 @@ class WavesurferMultitrack extends Plugin {
                     }
 
                     ws.on('waveform-ready', () => {
-                        this._log('waveform-ready: track=' + (item.details && item.details.track) + ' ch=' + (item.details && item.details.channel));
                         this._checkAllReady(totalChannels);
                     });
 
@@ -442,11 +435,7 @@ class WavesurferMultitrack extends Plugin {
             if (duration > 0) {
                 doCreate();
             } else {
-                this._log('Waiting for loadedmetadata to get duration...');
-                this.player.one(Event.LOADEDMETADATA, () => {
-                    this._log('loadedmetadata fired, creating wavesurfers');
-                    doCreate();
-                });
+                this.player.one(Event.LOADEDMETADATA, () => doCreate());
             }
         });
     }
@@ -650,6 +639,11 @@ class WavesurferMultitrack extends Plugin {
 
     /** @private */
     _onResize() {
+        if (this.opts.autoChannelHeight) {
+            this._recalculateAutoHeight();
+            return;
+        }
+
         const playerRect = this.player.el_.getBoundingClientRect();
         const newWidth = playerRect.width || this.player.el_.offsetWidth || 0;
         if (newWidth === 0) return;
@@ -681,6 +675,59 @@ class WavesurferMultitrack extends Plugin {
                 }
             });
         });
+    }
+
+    /**
+     * Recalculate channel heights for 16:9 auto mode and redraw all waveforms.
+     * Called on resize when autoChannelHeight is true.
+     * @private
+     */
+    _recalculateAutoHeight() {
+        if (!this._wrapper || this._wavesurfers.length === 0) return;
+
+        const playerRect = this.player.el_.getBoundingClientRect();
+        const playerWidth = playerRect.width || this.player.el_.offsetWidth || 0;
+        if (playerWidth === 0) return;
+
+        const channelDivs = Array.from(this._wrapper.querySelectorAll('.' + CHANNEL_CLASS));
+        const channelCount = channelDivs.length;
+        if (channelCount === 0) return;
+
+        const totalHeight = Math.round(playerWidth * 9 / 16);
+        const cappedHeight = this.opts.maxHeight ? Math.min(totalHeight, this.opts.maxHeight) : totalHeight;
+        const newChannelHeight = Math.max(1, Math.floor(cappedHeight / channelCount));
+
+        const progress = this.player.duration() > 0
+            ? Math.min(1, Math.max(0, this.player.currentTime() / this.player.duration()))
+            : 0;
+
+        channelDivs.forEach((div, i) => {
+            div.style.height = newChannelHeight + 'px';
+            const waveDiv = div.querySelector('.' + CHANNEL_CLASS + '__wave');
+            if (waveDiv) {
+                waveDiv.style.height = newChannelHeight + 'px';
+                waveDiv.dataset.waveHeight = newChannelHeight;
+            }
+
+            const ws = this._wavesurfers[i];
+            if (!ws) return;
+            try {
+                if (typeof ws.setHeight === 'function') {
+                    ws.setHeight(newChannelHeight);
+                }
+                ws.drawBuffer && ws.drawBuffer();
+            } catch (e) { /* ignore */ }
+
+            window.requestAnimationFrame(() => {
+                try {
+                    if (ws.drawer) ws.drawer.progress(progress);
+                } catch (e) { /* ignore */ }
+            });
+        });
+
+        const wrapperHeight = channelCount * newChannelHeight;
+        this._wrapper.style.height = wrapperHeight + 'px';
+        this._resizePlayer(wrapperHeight);
     }
 
     /** @private */
@@ -726,7 +773,6 @@ class WavesurferMultitrack extends Plugin {
         this._activeTrack = (trackId !== undefined && trackId !== null)
             ? Number(trackId)
             : null;
-        this._log('changeTrack: ' + (this._activeTrack !== null ? this._activeTrack : '(all)'));
 
         // Restore playback position (and resume if playing) once new waveforms are ready
         this.player.one(Event.WAVE_READY, () => {
@@ -768,7 +814,6 @@ class WavesurferMultitrack extends Plugin {
      * Called automatically by VideoJS when the player is disposed.
      */
     dispose() {
-        this._log('dispose()');
         if (this._resizeObserver) {
             this._resizeObserver.disconnect();
             this._resizeObserver = null;

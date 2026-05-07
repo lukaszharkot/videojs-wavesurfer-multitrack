@@ -125,7 +125,7 @@ The `trackId` must match the `details.track` field in your waveform-json items.
 | `tracks` | `Array` | `[]` | Array of BE thumbnail objects. Items with `type === "waveform-json"` are used. |
 | `channelHeight` | `Number` | `100` | Height in px for each waveform channel strip. |
 | `scrollFrom` | `Number` | `0` | `0` = stretch container height to fit all channels. `N` = fix container to `N * channelHeight` px and enable vertical scroll. |
-| `autoChannelHeight` | `Boolean` | `false` | When `true` and `scrollFrom > 0`, channels auto-fit their height equally to fill the viewport while their count is ≤ `scrollFrom`. Once count exceeds `scrollFrom` the fixed `channelHeight` takes over and scroll kicks in. |
+| `autoChannelHeight` | `Boolean` | `false` | When `true`, the total waveform area height = `playerWidth × 9/16` (16:9 ratio). Channels divide that height equally and the layout recalculates dynamically on resize. `scrollFrom` is ignored when this is active. |
 | `maxHeight` | `Number` | `undefined` | Maximum total waveform area height in px when `autoChannelHeight` is active. Caps the whole wrapper regardless of channel count. Has no effect otherwise. |
 | `waveColor` | `String` | `'#999'` | Waveform (unplayed) color. |
 | `progressColor` | `String` | `'#555'` | Progress (played) color. |
@@ -167,12 +167,6 @@ plugin.isReady();                // true when all waveforms are rendered
 ```bash
 npm run build      # build dev + min → dist/
 npm run start      # webpack dev server on :9000
-```
-
-## Publish
-
-```bash
-npm publish --access public
 ```
 
 ## License

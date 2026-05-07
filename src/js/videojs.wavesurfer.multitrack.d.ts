@@ -51,9 +51,9 @@ export interface Options {
     /** 0 = expand player; N = fix height at N*channelHeight and scroll. Default: 0 */
     scrollFrom?: number;
     /**
-     * When true and scrollFrom > 0, channels auto-fit to fill the viewport height equally
-     * while their count is <= scrollFrom. Once count exceeds scrollFrom the fixed
-     * channelHeight takes over and the wrapper scrolls. Default: false
+     * When true, the total waveform area height is set to playerWidth × 9/16 (16:9 aspect ratio)
+     * and all channels divide that height equally. Recalculates dynamically on player resize.
+     * When active, scrollFrom is ignored.
      */
     autoChannelHeight?: boolean;
     /**
